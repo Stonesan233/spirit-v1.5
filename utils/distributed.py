@@ -19,15 +19,20 @@ try:
 except Exception:
     Qwen3VLTextRMSNorm = None
 
+_IS_NPU = hasattr(torch, "npu")
+_DEV = torch.npu if _IS_NPU else torch.cuda
+_BACKEND = "hccl" if _IS_NPU else "nccl"
+_DEVICE_NAME = "npu" if _IS_NPU else "cuda"
+
 def setup_distributed():
     if "RANK" in os.environ:
-        dist.init_process_group(backend="nccl")
+        dist.init_process_group(backend=_BACKEND)
         local_rank = int(os.environ["LOCAL_RANK"])
         global_rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
-        torch.cuda.set_device(local_rank)
+        _DEV.set_device(local_rank)
 
-        mesh = init_device_mesh("cuda", (world_size,))
+        mesh = init_device_mesh(_DEVICE_NAME, (world_size,))
 
         print(f"Rank {global_rank}/{world_size} initialized")
     else:
@@ -35,7 +40,7 @@ def setup_distributed():
         global_rank = 0
         world_size = 1
         mesh = None
-        torch.cuda.set_device(0)
+        _DEV.set_device(0)
 
         print("Single GPU mode")
 
@@ -103,7 +108,7 @@ def apply_fsdp(model, mesh):
         model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         ignored_modules=unique_ignored_modules,
-        device_id=torch.cuda.current_device(),
+        device_id=_DEV.current_device(),
         auto_wrap_policy=auto_wrap_policy,
         mixed_precision=mp_policy,
         forward_prefetch=True,

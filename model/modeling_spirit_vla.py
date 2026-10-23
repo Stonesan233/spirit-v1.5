@@ -160,7 +160,7 @@ class SpiritVLAConfig:
     )
     input_features: dict[str, PolicyFeature] = field(default_factory=dict)
     output_features: dict[str, PolicyFeature] = field(default_factory=dict)
-    device: str = "cuda"
+    device: str = "npu"
     chunk_size: int = 50
     n_action_steps: int = 50
     max_state_dim: int = 32
@@ -515,11 +515,23 @@ class SpiritVLAPolicy(nn.Module):
             use_fast=False,
         )
         # Backbone + DiT head (flattened; state_dict prefix: model.*)
-        self.qwen = Qwen3VLForConditionalGeneration.from_pretrained(
-            config.backbone,
-            attn_implementation=config.attention_implementation,
-            dtype=torch.float32,
-        )
+        # If backbone is a local dir (offline edge box), build the backbone
+        # structurally from its config: real weights are restored afterwards
+        # from the Spirit checkpoint via load_state_dict, so no HF weight
+        # download is needed.
+        if os.path.isdir(config.backbone):
+            from transformers import Qwen3VLConfig
+
+            qwen_config = Qwen3VLConfig.from_pretrained(
+                config.backbone, attn_implementation=config.attention_implementation
+            )
+            self.qwen = Qwen3VLForConditionalGeneration(qwen_config)
+        else:
+            self.qwen = Qwen3VLForConditionalGeneration.from_pretrained(
+                config.backbone,
+                attn_implementation=config.attention_implementation,
+                dtype=torch.float32,
+            )
         self.image_processor = AutoProcessor.from_pretrained(self.config.backbone).image_processor
 
         dit_config = BaseDiTConfig(
@@ -836,7 +848,7 @@ class SpiritVLAPolicy(nn.Module):
     # Checkpoint loading
     # ------------------------------------------------------------------------------------------------------------------
     @classmethod
-    def from_pretrained(cls, ckpt_path: str, strict: bool = True, train: bool = False):
+    def from_pretrained(cls, ckpt_path: str, strict: bool = True, train: bool = False, backbone: Optional[str] = None):
         config_path = os.path.join(ckpt_path, "config.json")
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
@@ -850,6 +862,8 @@ class SpiritVLAPolicy(nn.Module):
 
         filtered_cfg = _filter(SpiritVLAConfig, cfg_dict)
         config = SpiritVLAConfig(**filtered_cfg)
+        if backbone is not None:
+            config.backbone = backbone
         model = cls(config)
         weight_path = os.path.join(ckpt_path, "model.safetensors")
         if not os.path.exists(weight_path):
