@@ -160,7 +160,7 @@ class SpiritVLAConfig:
     )
     input_features: dict[str, PolicyFeature] = field(default_factory=dict)
     output_features: dict[str, PolicyFeature] = field(default_factory=dict)
-    device: str = "npu"
+    device: Optional[str] = None
     chunk_size: int = 50
     n_action_steps: int = 50
     max_state_dim: int = 32
@@ -172,6 +172,13 @@ class SpiritVLAConfig:
     dit_dropout: float = 0.0
 
     def __post_init__(self):
+        if self.device is None:
+            if hasattr(torch, "npu") and torch.npu.is_available():
+                self.device = "npu"
+            elif torch.cuda.is_available():
+                self.device = "cuda"
+            else:
+                self.device = "cpu"
         self.normalization_mapping = {
             k: (v if isinstance(v, NormalizationMode) else NormalizationMode(v))
             for k, v in self.normalization_mapping.items()
