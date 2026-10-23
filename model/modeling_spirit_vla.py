@@ -141,6 +141,16 @@ class Unnormalize(nn.Module):
 # ----------------------------------------------------------------------------------------------------------------------
 
 
+def _device_available(device) -> bool:
+    if not isinstance(device, str):
+        return False
+    if device.startswith("npu"):
+        return hasattr(torch, "npu") and torch.npu.is_available()
+    if device.startswith("cuda"):
+        return torch.cuda.is_available()
+    return device == "cpu"
+
+
 @dataclass
 class SpiritVLAConfig:
     backbone: str = "Qwen/Qwen3-VL-4B-Instruct"
@@ -172,7 +182,7 @@ class SpiritVLAConfig:
     dit_dropout: float = 0.0
 
     def __post_init__(self):
-        if self.device is None:
+        if self.device is None or not _device_available(self.device):
             if hasattr(torch, "npu") and torch.npu.is_available():
                 self.device = "npu"
             elif torch.cuda.is_available():
@@ -879,18 +889,7 @@ class SpiritVLAPolicy(nn.Module):
         load_device = "cpu"
         if not train:
             try:
-                if (
-                    isinstance(config.device, str)
-                    and config.device.startswith("npu")
-                    and hasattr(torch, "npu")
-                    and torch.npu.is_available()
-                ):
-                    load_device = config.device
-                elif (
-                    isinstance(config.device, str)
-                    and config.device.startswith("cuda")
-                    and torch.cuda.is_available()
-                ):
+                if _device_available(config.device):
                     load_device = config.device
             except Exception:
                 load_device = "cpu"
