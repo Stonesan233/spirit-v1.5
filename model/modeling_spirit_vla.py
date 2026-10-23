@@ -875,11 +875,22 @@ class SpiritVLAPolicy(nn.Module):
         weight_path = os.path.join(ckpt_path, "model.safetensors")
         if not os.path.exists(weight_path):
             raise FileNotFoundError(f"model.safetensors not found in {ckpt_path}")
-        # If user requests CUDA and it's available, load weights directly on GPU to avoid an extra copy.
+        # If the configured accelerator is available, load weights directly on it to avoid an extra copy.
         load_device = "cpu"
         if not train:
             try:
-                if isinstance(config.device, str) and config.device.startswith("cuda") and torch.cuda.is_available():
+                if (
+                    isinstance(config.device, str)
+                    and config.device.startswith("npu")
+                    and hasattr(torch, "npu")
+                    and torch.npu.is_available()
+                ):
+                    load_device = config.device
+                elif (
+                    isinstance(config.device, str)
+                    and config.device.startswith("cuda")
+                    and torch.cuda.is_available()
+                ):
                     load_device = config.device
             except Exception:
                 load_device = "cpu"
