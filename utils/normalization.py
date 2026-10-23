@@ -177,10 +177,14 @@ def compute_norm_stats(
         )
     if is_dist:
         object_list = [stats]
+        if hasattr(torch, "npu"):
+            bc_device = torch.device("npu", torch.npu.current_device())
+        else:
+            bc_device = torch.device("cuda", torch.cuda.current_device())
         dist.broadcast_object_list(
             object_list,
             src=0,
-            device=torch.device("cuda", torch.cuda.current_device()),
+            device=bc_device,
         )
         stats = object_list[0]
         

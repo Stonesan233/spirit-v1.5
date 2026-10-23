@@ -95,7 +95,8 @@ def main():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     local_rank, global_rank, world_size, mesh = setup_distributed()
-    device = torch.device("cuda", local_rank)
+    use_npu = hasattr(torch, "npu")
+    device = torch.device("npu" if use_npu else "cuda", local_rank)
 
     logger_config = LoggerConfig(
         wandb_project=args.wandb_project,
@@ -137,7 +138,7 @@ def main():
         num_workers=args.num_workers,
         prefetch_factor=args.prefetch_factor,
         collate_fn=dataset.collate_fn,
-        pin_memory=True,
+        pin_memory=not use_npu,
     )
 
     logger.print("Creating model...")
@@ -161,9 +162,14 @@ def main():
     optimizer = AdamW(model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
     scheduler = build_cosine_scheduler(optimizer, warmup_steps, decay_steps, lr, decay_lr)
 
-    amp_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    if use_npu:
+        bf16_ok = torch.npu.is_bf16_supported()
+    else:
+        bf16_ok = torch.cuda.is_bf16_supported()
+    amp_dtype = torch.bfloat16 if bf16_ok else torch.float16
     use_scaler = (amp_dtype == torch.float16)
-    scaler = torch.amp.GradScaler("cuda") if use_scaler else None
+    dev_name = "npu" if use_npu else "cuda"
+    scaler = torch.amp.GradScaler(dev_name) if use_scaler else None
 
     logger.print("Starting training...")
     model.train()
@@ -185,7 +191,7 @@ def main():
             for k, v in batch.items()
         }
 
-        with torch.autocast("cuda", dtype=amp_dtype):
+        with torch.autocast(dev_name, dtype=amp_dtype):
             loss, log_dict = model(batch)
 
         if use_scaler:
