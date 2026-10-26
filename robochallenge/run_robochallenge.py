@@ -21,6 +21,8 @@ def control_robot():
     parser.add_argument("--single_task", type=str, required=True)
     parser.add_argument("--robochallenge_job_id", type=str, required=True)
     parser.add_argument("--ckpt_path", type=str, required=True)
+    parser.add_argument("--backbone", type=str, default=None,
+                        help="local backbone dir for offline deployment")
     parser.add_argument("--user_token", type=str, required=True)
     parser.add_argument("--used_chunk_size", type=int, default=60)
     cfg = parser.parse_args()

@@ -224,7 +224,9 @@ class RoboChallengeExecutor:
             logger.info("Task %s uses smaller chunk size: %s", task_name, used_chunk_size)
         binarization_threshold = TASTS_APPLY_GRIPPER_BINARIZATION.get(task_name)
         ckpt_path = cfg.ckpt_path
-        self.policy = SpiritVLAPolicy.from_pretrained(ckpt_path)
+        self.policy = SpiritVLAPolicy.from_pretrained(
+            ckpt_path, backbone=getattr(cfg, "backbone", None)
+        )
         self.device = _pick_device()
         self.policy.to(self.device)
         self.policy.eval()
