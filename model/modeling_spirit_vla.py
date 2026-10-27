@@ -667,7 +667,9 @@ class SpiritVLAPolicy(nn.Module):
         vlm_last_embed = self.proj_vlm_output(vlm_last_embed)
         dt = -1.0 / self.config.num_steps
         dt = torch.tensor(dt, dtype=torch.float32, device=device)
-        x_t = noise
+        # Do not alias the caller's noise tensor: the Euler update below is
+        # in-place (x_t += dt * v_t) and would otherwise silently overwrite it.
+        x_t = noise.clone()
         time = torch.tensor(1.0, dtype=torch.float32, device=device)
         while time >= -dt / 2:
             expanded_time = time.expand(bsize)

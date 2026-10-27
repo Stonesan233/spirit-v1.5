@@ -20,6 +20,9 @@
 | 4   | `compare_precision.py`                                              | **新增**        | 测试脚本        | 跨设备精度比对（物理量误差 + 判定）               |
 | 5   | `dit_bisect.py`                                                     | **新增**        | 诊断脚本        | 算子级确定性 bisect（forward-hook 逐模块比对） |
 | 6   | `robochallenge/test_examples/Spirit-v1.5-Ascend-910B-Test-Report.md` | **新增**        | 文档          | NPU 测试报告                          |
+| 7   | `benchmark_perf.py`                                                 | **新增**        | 测试脚本（兼容入口） | 兼容 4090 报告中的 `benchmark_perf.py` 命令 |
+
+> 以上 1–7 项已合入 `ascend-npu-porting`；`precision_test.py` / `compare_precision.py` / `perf_bench.py` 已统一为同时支持 4090 与 NPU 两套命令行。
 
 **不应合入**：`assets/rc_results.png` 的本地改动（LFS smudge 伪差异，保持仓库原样即可）、`.vscode/`。
 
@@ -44,7 +47,8 @@ time = torch.tensor(1.0, dtype=torch.float32, device=device)
 `x_t += dt * v_t` 为原地写，会静默覆盖调用者的 noise。生产路径（`RoboChallengeExecutor` →
 `select_action` 不传 noise）内部每次新生成张量，**行为从未受影响**；此修复只保护显式传
 noise 的调用方（本测试套件即是）。已验证：mock / 离线打分 / smoke 在含此修复的代码上
-结果与不含修复的 4090 结果一致。
+结果与不含修复的 4090 结果一致。统一合入时在 4090 上复验：修复前后 precision dump
+**bitwise 0 差异**；同输入 3 次确定性 PASS（action / `vlm_last_embed` / 逐步 `v_t` 全 0）。
 
 ---
 
@@ -82,7 +86,7 @@ python precision_test.py --ckpt ... --backbone ... [--inputs inputs.npz] \
 - `--no-autocast`：纯 fp32 模式（排查精度相关性）；`--dit-eager`：全局把
 `F.scaled_dot_product_attention` 替换为显式 math 实现（排查融合注意力）。
 
-> 注意：本版本参数与 4090 工作区早期版本（`--device/--dump`）不同，报告 `§9.2` 命令以本版本为准。
+> 已统一：同时兼容 4090 流程（`--device/--dump`）与 NPU 流程（`--cases/--stages/--determinism/--inputs/--out`）。
 
 ### 3.3 `compare_precision.py` — 跨设备精度比对
 
@@ -101,7 +105,7 @@ python compare_precision.py results_ref.npz results_test.npz
 
 - 对 DiT 内全部 Linear/LayerNorm/GEGLU/Attention/AdaLayerNorm/TimestepEncoder 等叶子模块
 挂 forward hook，同输入重复 3 次去噪，报告首个输出不一致的模块；
-- 排查"非确定"假象时使用（结论：250 个模块 bitwise 全等，问题在测试脚本而非算子）；
+- 排查"非确定"假象时使用（4090 实测 230 个、NPU 实测 250 个模块 bitwise 全等，问题在测试脚本而非算子）；
 - 平时无需运行，作为诊断工具保留。
 
 ---
@@ -153,4 +157,4 @@ SPIRIT_ROOT=<spirit路径> python offline_action_eval.py \
 （`--no-deps` 安装，详见 `Spirit-v1.5-Ascend-NPU-Porting.md` §3.3）；
 4. 离线 backbone 构造依赖本地 Qwen 小文件目录（`--backbone` 传入），离线环境禁止触发
 HF 下载（脚本已设 `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`）；
-5. `dit_bisect.py` 硬编码了 `/home/Spirit-v1.5` 等路径，仅在测试机使用，不作为通用工具维护。
+5. `dit_bisect.py` 默认路径为 `/home/Spirit-v1.5`，可用 `--ckpt/--backbone/--device` 覆盖；作为诊断工具维护。
