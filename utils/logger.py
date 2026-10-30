@@ -7,7 +7,10 @@
 import json
 from pathlib import Path
 
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 
 
 class Logger:
@@ -16,6 +19,9 @@ class Logger:
         self.run = None
 
         if rank == 0:
+            if wandb is None:
+                print("wandb not installed; wandb logging disabled")
+                return
             self.run = wandb.init(
                 project=config.wandb_project,
                 mode=config.wandb_mode,
