@@ -141,6 +141,16 @@ class Unnormalize(nn.Module):
 # ----------------------------------------------------------------------------------------------------------------------
 
 
+def _device_available(device) -> bool:
+    if not isinstance(device, str):
+        return False
+    if device.startswith("npu"):
+        return hasattr(torch, "npu") and torch.npu.is_available()
+    if device.startswith("cuda"):
+        return torch.cuda.is_available()
+    return device == "cpu"
+
+
 @dataclass
 class SpiritVLAConfig:
     backbone: str = "Qwen/Qwen3-VL-4B-Instruct"
@@ -160,7 +170,7 @@ class SpiritVLAConfig:
     )
     input_features: dict[str, PolicyFeature] = field(default_factory=dict)
     output_features: dict[str, PolicyFeature] = field(default_factory=dict)
-    device: str = "cuda"
+    device: Optional[str] = None
     chunk_size: int = 50
     n_action_steps: int = 50
     max_state_dim: int = 32
@@ -172,6 +182,13 @@ class SpiritVLAConfig:
     dit_dropout: float = 0.0
 
     def __post_init__(self):
+        if self.device is None or not _device_available(self.device):
+            if hasattr(torch, "npu") and torch.npu.is_available():
+                self.device = "npu"
+            elif torch.cuda.is_available():
+                self.device = "cuda"
+            else:
+                self.device = "cpu"
         self.normalization_mapping = {
             k: (v if isinstance(v, NormalizationMode) else NormalizationMode(v))
             for k, v in self.normalization_mapping.items()
@@ -515,11 +532,23 @@ class SpiritVLAPolicy(nn.Module):
             use_fast=False,
         )
         # Backbone + DiT head (flattened; state_dict prefix: model.*)
-        self.qwen = Qwen3VLForConditionalGeneration.from_pretrained(
-            config.backbone,
-            attn_implementation=config.attention_implementation,
-            dtype=torch.float32,
-        )
+        # If backbone is a local dir (offline edge box), build the backbone
+        # structurally from its config: real weights are restored afterwards
+        # from the Spirit checkpoint via load_state_dict, so no HF weight
+        # download is needed.
+        if os.path.isdir(config.backbone):
+            from transformers import Qwen3VLConfig
+
+            qwen_config = Qwen3VLConfig.from_pretrained(
+                config.backbone, attn_implementation=config.attention_implementation
+            )
+            self.qwen = Qwen3VLForConditionalGeneration(qwen_config)
+        else:
+            self.qwen = Qwen3VLForConditionalGeneration.from_pretrained(
+                config.backbone,
+                attn_implementation=config.attention_implementation,
+                dtype=torch.float32,
+            )
         self.image_processor = AutoProcessor.from_pretrained(self.config.backbone).image_processor
 
         dit_config = BaseDiTConfig(
@@ -836,7 +865,7 @@ class SpiritVLAPolicy(nn.Module):
     # Checkpoint loading
     # ------------------------------------------------------------------------------------------------------------------
     @classmethod
-    def from_pretrained(cls, ckpt_path: str, strict: bool = True, train: bool = False):
+    def from_pretrained(cls, ckpt_path: str, strict: bool = True, train: bool = False, backbone: Optional[str] = None):
         config_path = os.path.join(ckpt_path, "config.json")
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
@@ -850,15 +879,17 @@ class SpiritVLAPolicy(nn.Module):
 
         filtered_cfg = _filter(SpiritVLAConfig, cfg_dict)
         config = SpiritVLAConfig(**filtered_cfg)
+        if backbone is not None:
+            config.backbone = backbone
         model = cls(config)
         weight_path = os.path.join(ckpt_path, "model.safetensors")
         if not os.path.exists(weight_path):
             raise FileNotFoundError(f"model.safetensors not found in {ckpt_path}")
-        # If user requests CUDA and it's available, load weights directly on GPU to avoid an extra copy.
+        # If the configured accelerator is available, load weights directly on it to avoid an extra copy.
         load_device = "cpu"
         if not train:
             try:
-                if isinstance(config.device, str) and config.device.startswith("cuda") and torch.cuda.is_available():
+                if _device_available(config.device):
                     load_device = config.device
             except Exception:
                 load_device = "cpu"
