@@ -25,6 +25,7 @@ from utils import (
     compute_norm_stats,
     save_model,
     Logger,
+    npu_available,
 )
 
 
@@ -95,7 +96,7 @@ def main():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     local_rank, global_rank, world_size, mesh = setup_distributed()
-    use_npu = hasattr(torch, "npu")
+    use_npu = npu_available()
     device = torch.device("npu" if use_npu else "cuda", local_rank)
 
     logger_config = LoggerConfig(

@@ -38,6 +38,7 @@ from utils import (
     PolicyFeature,
     build_norm_state,
     get_rope_index_3,
+    npu_available,
     pad_and_cat,
     pad_vector,
     preprocess_qwen_visual,
@@ -145,7 +146,7 @@ def _device_available(device) -> bool:
     if not isinstance(device, str):
         return False
     if device.startswith("npu"):
-        return hasattr(torch, "npu") and torch.npu.is_available()
+        return npu_available()
     if device.startswith("cuda"):
         return torch.cuda.is_available()
     return device == "cpu"
@@ -183,7 +184,7 @@ class SpiritVLAConfig:
 
     def __post_init__(self):
         if self.device is None or not _device_available(self.device):
-            if hasattr(torch, "npu") and torch.npu.is_available():
+            if npu_available():
                 self.device = "npu"
             elif torch.cuda.is_available():
                 self.device = "cuda"
