@@ -15,6 +15,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
 
+from .accelerator import npu_available
+
 
 class FeatureType(str, Enum):
     STATE = "STATE"
@@ -177,7 +179,7 @@ def compute_norm_stats(
         )
     if is_dist:
         object_list = [stats]
-        if hasattr(torch, "npu"):
+        if npu_available():
             bc_device = torch.device("npu", torch.npu.current_device())
         else:
             bc_device = torch.device("cuda", torch.cuda.current_device())

@@ -12,17 +12,10 @@ from torchvision.utils import save_image
 from typing import Optional
 
 from model.modeling_spirit_vla import SpiritVLAPolicy
+from utils.accelerator import pick_device
 from .task_info import TASK_INFO, TASKS_USE_LESS_CHUNK_SIZE, TASTS_APPLY_GRIPPER_BINARIZATION
 
 logger = logging.getLogger(__name__)
-
-
-def _pick_device() -> torch.device:
-    if hasattr(torch, "npu") and torch.npu.is_available():
-        return torch.device("npu")
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
 
 
 def _img_byte_to_tensor(img_byte, target_size_for_PIL=(320, 240)):
@@ -120,7 +113,7 @@ def _post_process_action(action_np, state_np, robot_type, used_chunk_size, raw_e
 
 
 def _prepare_batch(item_tmp, task_name, img_save_path, save_idx, raw_embodiment_stats, used_embodiment_stats=None):
-    device = _pick_device()
+    device = pick_device()
     robot_type = TASK_INFO[task_name]["robot_type"]
     item = {}
     if raw_embodiment_stats is not None:
@@ -227,7 +220,7 @@ class RoboChallengeExecutor:
         self.policy = SpiritVLAPolicy.from_pretrained(
             ckpt_path, backbone=getattr(cfg, "backbone", None)
         )
-        self.device = _pick_device()
+        self.device = pick_device()
         self.policy.to(self.device)
         self.policy.eval()
         self.task_name = task_name

@@ -14,12 +14,14 @@ from torch.distributed.fsdp import MixedPrecision
 from torch.distributed.fsdp import BackwardPrefetch, ShardingStrategy
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
+from .accelerator import npu_available
+
 try:
     from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRMSNorm
 except Exception:
     Qwen3VLTextRMSNorm = None
 
-_IS_NPU = hasattr(torch, "npu")
+_IS_NPU = npu_available()
 _DEV = torch.npu if _IS_NPU else torch.cuda
 _BACKEND = "hccl" if _IS_NPU else "nccl"
 _DEVICE_NAME = "npu" if _IS_NPU else "cuda"
