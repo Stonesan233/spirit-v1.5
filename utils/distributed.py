@@ -28,11 +28,14 @@ _DEVICE_NAME = "npu" if _IS_NPU else "cuda"
 
 def setup_distributed():
     if "RANK" in os.environ:
-        dist.init_process_group(backend=_BACKEND)
         local_rank = int(os.environ["LOCAL_RANK"])
         global_rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
+        # Bind the process to its device before the backend initialises: HCCL
+        # resolves the device when the process group is created, whereas NCCL
+        # tolerates a later set_device.
         _DEV.set_device(local_rank)
+        dist.init_process_group(backend=_BACKEND)
 
         mesh = init_device_mesh(_DEVICE_NAME, (world_size,))
 
@@ -44,7 +47,7 @@ def setup_distributed():
         mesh = None
         _DEV.set_device(0)
 
-        print("Single GPU mode")
+        print(f"Single device mode ({_DEVICE_NAME})")
 
     return local_rank, global_rank, world_size, mesh
 
@@ -110,7 +113,9 @@ def apply_fsdp(model, mesh):
         model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         ignored_modules=unique_ignored_modules,
-        device_id=_DEV.current_device(),
+        # Pass a full device, not a bare ordinal: FSDP interprets a plain int as
+        # a CUDA index, which is wrong on NPU.
+        device_id=torch.device(_DEVICE_NAME, _DEV.current_device()),
         auto_wrap_policy=auto_wrap_policy,
         mixed_precision=mp_policy,
         forward_prefetch=True,

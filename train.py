@@ -25,6 +25,9 @@ from utils import (
     compute_norm_stats,
     save_model,
     Logger,
+    autocast,
+    bf16_supported,
+    grad_scaler,
     npu_available,
 )
 
@@ -163,11 +166,8 @@ def main():
     optimizer = AdamW(model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
     scheduler = build_cosine_scheduler(optimizer, warmup_steps, decay_steps, lr, decay_lr)
 
-    bf16_ok = torch.npu.is_bf16_supported() if use_npu else torch.cuda.is_bf16_supported()
-    amp_dtype = torch.bfloat16 if bf16_ok else torch.float16
-    use_scaler = (amp_dtype == torch.float16)
-    dev_name = "npu" if use_npu else "cuda"
-    scaler = torch.amp.GradScaler(dev_name) if use_scaler else None
+    amp_dtype = torch.bfloat16 if bf16_supported() else torch.float16
+    scaler = grad_scaler(amp_dtype == torch.float16)
 
     logger.print("Starting training...")
     model.train()
@@ -189,10 +189,10 @@ def main():
             for k, v in batch.items()
         }
 
-        with torch.autocast(dev_name, dtype=amp_dtype):
+        with autocast(amp_dtype):
             loss, log_dict = model(batch)
 
-        if use_scaler:
+        if scaler is not None:
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
