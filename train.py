@@ -11,6 +11,9 @@ import os
 import types
 from dataclasses import dataclass, fields
 
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
@@ -76,6 +79,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Spirit-v1.5 RoboChallenge finetune")
     # Required param
     parser.add_argument("--pretrained_path", type=str, required=True, help="pretrained model path")
+    parser.add_argument("--backbone", type=str, default=None,
+                        help="local Qwen3-VL dir (offline); overrides the backbone in ckpt config.json")
     parser.add_argument("--data_root", type=str, required=True, help="dataset path")
     # Optional param
     parser.add_argument("--batch_size", type=int, default=32)
@@ -146,7 +151,9 @@ def main():
     )
 
     logger.print("Creating model...")
-    model = SpiritVLAPolicy.from_pretrained(ckpt_path= args.pretrained_path, strict=False, train=True).to(device)
+    model = SpiritVLAPolicy.from_pretrained(
+        ckpt_path=args.pretrained_path, strict=False, train=True, backbone=args.backbone
+    ).to(device)
     set_norm_stats(model, norm_stats, device)
 
     model.qwen.gradient_checkpointing_enable(

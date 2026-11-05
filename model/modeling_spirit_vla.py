@@ -543,7 +543,11 @@ class SpiritVLAPolicy(nn.Module):
             qwen_config = Qwen3VLConfig.from_pretrained(
                 config.backbone, attn_implementation=config.attention_implementation
             )
-            self.qwen = Qwen3VLForConditionalGeneration(qwen_config)
+            # The upstream config.json carries torch_dtype=bfloat16; without this
+            # override the backbone is constructed in bf16 and the fp32 checkpoint
+            # weights get silently rounded on load_state_dict. Force fp32.
+            qwen_config.torch_dtype = torch.float32
+            self.qwen = Qwen3VLForConditionalGeneration(qwen_config).float()
         else:
             self.qwen = Qwen3VLForConditionalGeneration.from_pretrained(
                 config.backbone,
